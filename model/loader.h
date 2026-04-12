@@ -1,6 +1,7 @@
 #ifndef LOADER
 #define LOADER
 
+#include "tensor.h"
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -16,26 +17,26 @@ typedef struct {
   uint8_t numDimentions;
   uint32_t *sizeDimentions;
   float *data;
-} array_t;
+} tensor_t;
 
-array_t *getArray();
+tensor_t *getTensor();
 
-void freeArray(array_t *array);
+void freeTensor(tensor_t *tensor);
 
-static bool readNumDimention(array_t *array, FILE *file);
+static bool readNumDimention(tensor_t *tensor, FILE *file);
 
 uint32_t swapBytes(uint32_t val);
 
-static bool readSizeDimention(array_t *array, FILE *file);
+static bool readSizeDimention(tensor_t *tensor, FILE *file);
 
-static bool readData(array_t *array, FILE *file);
+static bool readData(tensor_t *tensor, FILE *file);
 
-bool loadIdx(array_t *array, char *filePath);
+bool loadIdx(tensor_t *tensor, char *filePath);
 
-static inline float getPixelValue(array_t *array, int imageId, int line, int column) {
-  return array->data[array->sizeDimentions[1] * array->sizeDimentions[2] * imageId + array->sizeDimentions[2] * line + column];
+static inline float getPixelValue(tensor_t *tensor, int imageId, int line, int column) {
+  return tensor->data[tensor->sizeDimentions[1] * tensor->sizeDimentions[2] * imageId + tensor->sizeDimentions[2] * line + column];
 }
 
-void displayImage(array_t *array, int imageId);
+void displayImage(tensor_t *tensor, int imageId);
 
 #endif

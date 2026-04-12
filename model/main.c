@@ -2,8 +2,8 @@
 #include <stdio.h>
 
 int main() {
-  array_t *trainImages = getArray();
-  array_t *trainLabels = getArray();
+  tensor_t *trainImages = getTensor();
+  tensor_t *trainLabels = getTensor();
 
   char *trainImagesPath = "/Users/edudolivs/Projects/mnist-model/mnist-dataset/train-images.idx3-ubyte";
   char *trainLabelsPath = "/Users/edudolivs/Projects/mnist-model/mnist-dataset/train-labels.idx1-ubyte";
@@ -16,6 +16,6 @@ int main() {
     displayImage(trainImages, i);
   }
 
-  freeArray(trainImages);
+  freeTensor(trainImages);
   return 0;
 }
