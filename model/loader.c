@@ -1,28 +1,8 @@
+#include "tensor.h"
 #include "loader.h"
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
-
-tensor_t *getTensor() {
-  tensor_t *tensor = (tensor_t *)malloc(sizeof(tensor_t));
-  tensor->sizeDimentions = NULL;
-  tensor->data = NULL;
-  return tensor;
-}
-
-void freeTensor(tensor_t *tensor) {
-  if (!tensor) {
-    return;
-  }
-  if (tensor->sizeDimentions) {
-    free(tensor->sizeDimentions);
-  }
-  if (tensor->data) {
-    free(tensor->data);
-  }
-  free(tensor);
-  tensor = NULL;
-}
 
 bool readNumDimention(tensor_t *tensor, FILE *file) {
   uint8_t magicNum[4];
@@ -30,12 +10,6 @@ bool readNumDimention(tensor_t *tensor, FILE *file) {
   size_t bytesRead = fread(magicNum, 1, 4, file);
 
   tensor->numDimentions = magicNum[3];
-
-  if (tensor->numDimentions == 3) {
-    tensor->category = IMAGE;
-  } else {
-    tensor->category = LABEL;
-  }
 
   return 0;
 }
@@ -65,20 +39,22 @@ bool readData(tensor_t *tensor, FILE *file) {
 
   uint8_t *buffer = (uint8_t *)malloc(totalSize * sizeof(uint8_t));
 
-  tensor->data = (float *)malloc(sizeof(float) * totalSize);
+  tensor->data = (double *)malloc(sizeof(double) * totalSize);
 
   size_t bytesRead = fread(buffer, 1, totalSize, file);
 
-  if (tensor->category == IMAGE) {
+  if (tensor->numDimentions == 3) {
     for (int i = 0; i < totalSize; i++) {
-      tensor->data[i] = (float)buffer[i] / 255.0;
+      tensor->data[i] = (double)buffer[i] / 255.0;
     }
   } else {
     for (int i = 0; i < totalSize; i++) {
-      tensor->data[i] = (float)buffer[i];
+      tensor->data[i] = (double)buffer[i];
     }
   }
 
+  free(buffer);
+  buffer = NULL;
   return 0;
 }
 
