@@ -2,29 +2,41 @@
 #include "tensor.h"
 #include "random.h"
 #include <stdio.h>
+#include <string.h>
 #include <time.h>
 
 int main() {
-  tensor_t *trainImages = getNullTensor();
-  tensor_t *trainLabels = getNullTensor();
-
   char *trainImagesPath = "/Users/edudolivs/Projects/mnist-model/mnist-dataset/train-images.idx3-ubyte";
   char *trainLabelsPath = "/Users/edudolivs/Projects/mnist-model/mnist-dataset/train-labels.idx1-ubyte";
 
-  loadIdx(trainImages, trainImagesPath);
-  loadIdx(trainLabels, trainLabelsPath);
+  tensor_t *trainImages = loadIdx(trainImagesPath);
+  tensor_t *trainLabels = loadIdx(trainLabelsPath);
 
   seed(time(NULL));
-
-  int imageId;
-  for (int i = 0; i < 10; i ++) {
-    imageId = randUint64() % 60000;
-
-    printf("%.0f\n", trainLabels->data[imageId]);
-    displayImage(trainImages, imageId);
-  }
-
   freeTensor(trainImages);
+  freeTensor(trainLabels);
+
+  uint32_t shape[] = {3, 3};
+  tensor_t *a = getTensor(2, shape);
+  fillGaussTensor(a);
+  display2dTensor(a);
+  tensor_t *b = getTensor(2, shape);
+  fillGaussTensor(b);
+  display2dTensor(b);
+
+  tensor_t *prod = getTensor(a->dim, a->shape);
+  multiply2dTensor(prod, a, b);
+  display2dTensor(prod);
+
+  fillTensor(a, 1);
+  display2dTensor(a);
+  addTensor(prod, a);
+
+  display2dTensor(prod);
+
+  freeTensor(b);
+  freeTensor(a);
+  freeTensor(prod);
 
   return 0;
 }

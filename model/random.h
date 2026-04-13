@@ -3,13 +3,13 @@
 
 #include <stdint.h>
 
-void seed(uint64_t s);
+void seed(uint32_t s);
 
-uint64_t randUint64();
+uint32_t randUint32();
 
-double randDouble();
+float randFloat();
 
-double randGauss();
+float randGauss();
 
 void printGauss();
 

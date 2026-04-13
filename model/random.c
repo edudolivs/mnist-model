@@ -3,27 +3,31 @@
 #include <stdio.h>
 #include <math.h>
 #include <time.h>
+#include <string.h>
 
-uint64_t state;
+uint32_t state;
 
-void seed(uint64_t s) {
+void seed(uint32_t s) {
   state = s;
 }
 
-uint64_t randUint64() {
-  state ^= state << 12;
-  state ^= state >> 25;
-  state ^= state >> 27;
-  return state * 0x2545F4914F6CDD1DULL;
+uint32_t randUint32() {
+  state ^= state << 13;
+  state ^= state >> 17;
+  state ^= state >> 5;
+  return state * 1597334677U;
 }
 
-double randDouble() {
-  return (randUint64() >> 11) * (1.0 / 9007199254740992.0);
+float randFloat() {
+  uint32_t x = (randUint32() >> 9) | 0x3f800000;
+  float f;
+  memcpy(&f, &x, sizeof(f));
+  return f - 1.0f;
 }
 
-double randGauss() {
-  double u1 = 1 - randDouble();
-  double u2 = randDouble();
+float randGauss() {
+  float u1 = 1 - randFloat();
+  float u2 = randFloat();
 
   return sqrt(-2 * log(u1)) * cos(2 * M_PI * u2);
 }
@@ -31,7 +35,7 @@ double randGauss() {
 void printGauss() {
   seed(time(NULL));
 
-  double val;
+  float val;
   float n = 100000;
   float std = 6;
   float h = 32;
