@@ -13,6 +13,15 @@ int main() {
   tensor_t *trainLabels = loadIdx(trainLabelsPath);
 
   seed(time(NULL));
+
+  uint32_t imageId = randUint32() % 60000;
+
+  printf("label: %.0f\n", trainLabels->data[imageId]);
+  tensor_t *view = getView(trainImages, imageId);
+  displayImage(view);
+
+  freeTensor(view);
+
   freeTensor(trainImages);
   freeTensor(trainLabels);
 
@@ -37,6 +46,8 @@ int main() {
   freeTensor(b);
   freeTensor(a);
   freeTensor(prod);
+
+  printGauss();
 
   return 0;
 }

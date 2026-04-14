@@ -1,18 +1,17 @@
 #include "tensor.h"
 #include "random.h"
+#include <math.h>
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
-#include <stdbool.h>
 
-tensor_t *getTensor(uint8_t dim, uint32_t *shape) {
+tensor_t *allocTensor(uint8_t dim, uint32_t *shape) {
   tensor_t *tensor = (tensor_t *)malloc(sizeof(tensor_t));
   if (!tensor) {
     perror("malloc");
     return NULL;
   }
 
-  tensor->isOwner = true;
   tensor->dim = dim;
 
   tensor->shape = (uint32_t *)malloc(dim * sizeof(uint32_t));
@@ -43,8 +42,14 @@ tensor_t *getTensor(uint8_t dim, uint32_t *shape) {
 
   tensor->len = len;
 
-  tensor->data = (float *)malloc(len * sizeof(float));
-  if (!tensor->data) {
+  return tensor;
+}
+
+tensor_t *getTensor(uint8_t dim, uint32_t *shape) {
+  tensor_t *tensor = allocTensor(dim, shape);
+
+  tensor->storage = (storage_t *)malloc(sizeof(storage_t));
+  if (!tensor->storage) {
     perror("malloc");
     free(tensor->stride);
     free(tensor->shape);
@@ -52,34 +57,48 @@ tensor_t *getTensor(uint8_t dim, uint32_t *shape) {
     return NULL;
   }
 
+  tensor->storage->refCount = 1;
+
+  tensor->storage->raw = (float *)malloc(tensor->len * sizeof(float));
+  if (!tensor->storage->raw) {
+    perror("malloc");
+    free(tensor->storage);
+    free(tensor->stride);
+    free(tensor->shape);
+    free(tensor);
+    return NULL;
+  }
+
+  tensor->data = tensor->storage->raw;
+
   return tensor;
 }
 
 tensor_t *getView(tensor_t *tensor, uint32_t id) {
-  tensor_t *slice = getTensor(tensor->dim - 1, tensor->shape + 1);
+  tensor_t *slice = allocTensor(tensor->dim - 1, tensor->shape + 1);
 
-  slice->isOwner = false;
-  free(slice->data);
+  tensor->storage->refCount++;
+  slice->storage = tensor->storage;
   slice->data = tensor->data + (id * tensor->stride[0]);
 
   return slice;
 }
 
-bool fillTensor(tensor_t *tensor, float value) {
-  for (int i = 0; i < tensor->len; i++) {
+int fillTensor(tensor_t *tensor, float value) {
+  for (uint32_t i = 0; i < tensor->len; i++) {
     tensor->data[i] = value;
   }
   return 0;
 }
 
-bool fillGaussTensor(tensor_t *tensor) {
-  for (int i = 0; i < tensor->len; i++) {
+int fillGaussTensor(tensor_t *tensor) {
+  for (uint32_t i = 0; i < tensor->len; i++) {
     tensor->data[i] = randGauss();
   }
   return 0;
 }
 
-bool copyTensor(tensor_t *dest, tensor_t *origin) {
+int copyTensor(tensor_t *dest, tensor_t *origin) {
   if (!dest | !origin) {
     return 1;
   }
@@ -99,27 +118,30 @@ void freeTensor(tensor_t *tensor) {
   if (!tensor) {
     return;
   }
-  if (tensor->isOwner) {
-    free(tensor->data);
+  tensor->storage->refCount--;
+  if (tensor->storage->refCount == 0) {
+    free(tensor->storage->raw);
+    free(tensor->storage);
   }
   free(tensor->shape);
+  free(tensor->stride);
   free(tensor);
   tensor = NULL;
 }
 
-bool multiply2dTensor(tensor_t *prod, tensor_t *a, tensor_t *b) {
+int multiply2dTensor(tensor_t *prod, tensor_t *a, tensor_t *b) {
   if ((prod->dim !=2) | (a->dim != 2) | (b->dim != 2) |
   (prod->shape[0] != a->shape[0]) | (prod->shape[1] != b->shape[1]) |
   (a->shape[1] != b->shape[0])) {
-    fprintf(stderr, "multiply2dTensor: dimention missmatch.");
+    fprintf(stderr, "multiply2dTensor: dimention missmatch\n");
     return 1;
   }
 
   fillTensor(prod, 0);
 
-  for (int i = 0; i < prod->shape[0]; i++) {
-    for (int k = 0; k < a->shape[1]; k++) {
-      for (int j = 0; j < prod->shape[1]; j++) {
+  for (uint32_t i = 0; i < prod->shape[0]; i++) {
+    for (uint32_t k = 0; k < a->shape[1]; k++) {
+      for (uint32_t j = 0; j < prod->shape[1]; j++) {
         *getValue(prod, i, j) += *getValue(a, i, k) * *getValue(b, k, j);
       }
     }
@@ -128,31 +150,67 @@ bool multiply2dTensor(tensor_t *prod, tensor_t *a, tensor_t *b) {
   return 0;
 }
 
-bool addTensor(tensor_t *dest, tensor_t *origin) {
-  if ((dest->dim != origin->dim) | (memcmp(dest->shape, origin->shape, dest->dim * sizeof(uint32_t)))) {
-    fprintf(stderr, "addTensor: dimention missmatch.");
+int addTensor(tensor_t *out, tensor_t *in) {
+  if ((!out) | (!in) | (out->dim != in->dim) | (memcmp(out->shape, in->shape, out->dim * sizeof(uint32_t)))) {
+    fprintf(stderr, "addTensor: dimention missmatch\n");
     return 1;
   }
 
-  for (int i = 0; i < dest->len; i++) {
-    dest->data[i] += origin->data[i];
+  for (uint32_t i = 0; i < out->len; i++) {
+    out->data[i] += in->data[i];
   }
 
   return 0;
+}
+
+int reluTensor(tensor_t *out, tensor_t *in) {
+  if ((!out) | (!in) | (out->dim != in->dim) | (memcmp(out->shape, in->shape, out->dim * sizeof(uint32_t)))) {
+    fprintf(stderr, "reluTensor: dimention missmatch\n");
+    return 1;
+  }
+
+  for (uint32_t i = 0; i < out->len; i++) {
+    out->data[i] = (in->data[i] > 0) ? in->data[i] : 0;
+  }
+
+  return 0;
+}
+
+int softmaxTensor(tensor_t *out, tensor_t *in) {
+  if ((!out) | (!in) | (out->dim != in->dim) | (memcmp(out->shape, in->shape, out->dim * sizeof(uint32_t)))) {
+    fprintf(stderr, "softmaxTensor: dimention missmatch\n");
+    return 1;
+  }
+
+  double denominator = 0;
+  for (uint32_t i = 0; i < out->len; i++) {
+    denominator += exp((double)in->data[i]);
+  }
+
+  for (uint32_t i = 0; i < out->len; i++) {
+    out->data[i] = (float)( ((double)in->data[i]) / denominator);
+  }
+
+  return 0;
+}
+
+float crossEntropyLoss(tensor_t *predicted, uint8_t real) {
+  double p = (predicted->data[real] > 1e-7) ? predicted->data[real] : 1e-7;
+  return (float)(-1 * log(p));
 }
 
 tensor_t *transpose2dTensor(tensor_t *tensor) {
   if (!tensor) {
     return NULL;
   }
-  tensor_t *tensorT = getTensor(tensor->dim, tensor->shape);
+  tensor_t *tensorT = allocTensor(tensor->dim, tensor->shape);
   if (!tensorT) {
     return NULL;
   }
 
-  free(tensorT->data);
+  tensorT->storage = tensor->storage;
   tensorT->data = tensor->data;
-  tensorT->isOwner = false;
+  tensor->storage->refCount++;
 
   tensorT->shape[0] = tensor->shape[1];
   tensorT->shape[1] = tensor->shape[0];
@@ -164,8 +222,8 @@ tensor_t *transpose2dTensor(tensor_t *tensor) {
 }
 
 void display2dTensor(tensor_t *tensor) {
-  for (int line = 0; line < tensor->shape[0]; line++) {
-    for (int column = 0; column < tensor->shape[1]; column++) {
+  for (uint32_t line = 0; line < tensor->shape[0]; line++) {
+    for (uint32_t column = 0; column < tensor->shape[1]; column++) {
       printf("%5.2f ", *getValue(tensor, line, column));
     }
     printf("\n");

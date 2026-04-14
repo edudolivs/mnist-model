@@ -2,17 +2,16 @@
 #define LOADER
 
 #include "tensor.h"
-#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 
-uint8_t readNumDimention(FILE *file);
+int readNumDimention(uint8_t *dim, FILE *file);
 
-uint32_t swapBytes(uint32_t val);
+void swapBytes(uint32_t *val);
 
-bool readSizeDimention(uint32_t *shape, FILE *file, uint8_t dim);
+int readSizeDimention(uint32_t *shape, FILE *file, uint8_t dim);
 
-bool readData(tensor_t *tensor, FILE *file);
+int readData(tensor_t *tensor, FILE *file);
 
 tensor_t *loadIdx(char *filePath);
 

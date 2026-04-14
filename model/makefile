@@ -16,7 +16,7 @@ $(TARGET): $(OBJS)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
-	rm -f $(OBJS)
+	rm -f $(OBJS) $(TARGET)
 
 loader.o: loader.c loader.h tensor.h
 tensor.o: tensor.c tensor.h random.h

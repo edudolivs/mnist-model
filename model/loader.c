@@ -1,43 +1,56 @@
 #include "tensor.h"
 #include "loader.h"
-#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 
-uint8_t readNumDimention(FILE *file) {
+int readNumDimention(uint8_t *dim, FILE *file) {
   uint8_t magicNum[4];
 
-  size_t bytesRead = fread(magicNum, 1, 4, file);
-
-  return magicNum[3];
-}
-
-uint32_t swapBytes(uint32_t val) {
-  return ((val << 24) | ((val << 8) & 0x00FF0000) | ((val >> 8) & 0x0000FF00) | (val >> 24));
-}
-
-bool readSizeDimention(uint32_t *shape, FILE *file, uint8_t dim) {
-  size_t bytesRead = fread(shape, sizeof(uint32_t), dim, file);
-
-  for (int i = 0; i < dim; i++) {
-    shape[i] = swapBytes(shape[i]);
+  size_t elemRead = fread(magicNum, sizeof(uint8_t), 4, file);
+  if (elemRead != 4) {
+    fprintf(stderr, "fread: error\n");
+    return 1;
   }
 
-  return shape;
+  *dim = magicNum[3];
+
+  return 0;
 }
 
-bool readData(tensor_t *tensor, FILE *file) {
+void swapBytes(uint32_t *val) {
+  *val = (((*val) << 24) | (((*val) << 8) & 0x00FF0000) | (((*val) >> 8) & 0x0000FF00) | ((*val) >> 24));
+}
+
+int readSizeDimention(uint32_t *shape, FILE *file, uint8_t dim) {
+  size_t elemRead = fread(shape, sizeof(uint32_t), dim, file);
+  if (elemRead != dim) {
+    fprintf(stderr, "fread: error\n");
+    return 1;
+  }
+
+  for (int i = 0; i < dim; i++) {
+    swapBytes(shape + i);
+  }
+
+  return 0;
+}
+
+int readData(tensor_t *tensor, FILE *file) {
   uint8_t *buffer = (uint8_t *)malloc(sizeof(uint8_t) * tensor->len);
 
-  size_t bytesRead = fread(buffer, 1, tensor->len, file);
+  size_t elemRead = fread(buffer, 1, tensor->len, file);
+  if (elemRead != tensor->len) {
+    fprintf(stderr, "fread: error\n");
+    return 1;
+  }
 
   if (tensor->dim == 3) {
-    for (int i = 0; i < tensor->len; i++) {
+    for (uint32_t i = 0; i < tensor->len; i++) {
       tensor->data[i] = (float)buffer[i] / 255.0;
     }
   } else {
-    for (int i = 0; i < tensor->len; i++) {
+    for (uint32_t i = 0; i < tensor->len; i++) {
       tensor->data[i] = (float)buffer[i];
     }
   }
@@ -49,8 +62,9 @@ bool readData(tensor_t *tensor, FILE *file) {
 
 tensor_t *loadIdx(char *filePath) {
   FILE *file = fopen(filePath, "rb");
+  uint8_t dim;
 
-  uint8_t dim = readNumDimention(file);
+  readNumDimention(&dim, file);
 
   uint32_t shape[dim];
 
@@ -64,8 +78,8 @@ tensor_t *loadIdx(char *filePath) {
 }
 
 void displayImage(tensor_t *tensor) {
-  for (int line = 0; line < tensor->shape[0]; line++) {
-    for (int column = 0; column < tensor->shape[1]; column++) {
+  for (uint32_t line = 0; line < tensor->shape[0]; line++) {
+    for (uint32_t column = 0; column < tensor->shape[1]; column++) {
       if (*(getValue(tensor, line, column)) < 0.5) {
         printf(". ");
       } else {
