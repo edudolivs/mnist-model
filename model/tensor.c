@@ -182,15 +182,19 @@ int softmaxTensor(tensor_t *out, tensor_t *in) {
     return 1;
   }
 
+  double *buffer = malloc(sizeof(double) * out->len);
   double denominator = 0;
+
   for (uint32_t i = 0; i < out->len; i++) {
-    denominator += exp((double)in->data[i]);
+    out->data[i] = exp((double)in->data[i]);
+    denominator += out->data[i];
   }
 
   for (uint32_t i = 0; i < out->len; i++) {
-    out->data[i] = (float)( ((double)in->data[i]) / denominator);
+    out->data[i] = (float)(out->data[i] / denominator);
   }
 
+  free(buffer);
   return 0;
 }
 
