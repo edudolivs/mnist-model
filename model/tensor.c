@@ -30,7 +30,7 @@ tensor_t *allocTensor(uint8_t dim, uint32_t *shape) {
   }
 
   uint32_t len = 1;
-  for (int i = 0; i < dim; i++) {
+  for (uint32_t i = 0; i < dim; i++) {
     len *= shape[i];
     tensor->shape[i] = shape[i];
   }
@@ -74,14 +74,47 @@ tensor_t *getTensor(uint8_t dim, uint32_t *shape) {
   return tensor;
 }
 
-tensor_t *getView(tensor_t *tensor, uint32_t id) {
-  tensor_t *slice = allocTensor(tensor->dim - 1, tensor->shape + 1);
+int initView(tensor_t *view, tensor_t *tensor, uint32_t id) {
+  uint32_t dim = tensor->dim - 1;
+  uint32_t *shape = tensor->shape + 1;
+  uint32_t *stride = tensor->stride + 1;
 
+  view->dim = dim;
+
+  view->shape = (uint32_t *)malloc(dim * sizeof(uint32_t));
+  if (!view->shape) {
+    perror("malloc");
+    return 1;
+  }
+
+  view->stride = (uint32_t *)malloc(dim * sizeof(uint32_t));
+  if (!view->stride) {
+    perror("malloc");
+    free(view->shape);
+    return 1;
+  }
+
+  uint32_t len = 1;
+  for (uint32_t i = 0; i < dim; i++) {
+    len *= shape[i];
+    view->shape[i] = shape[i];
+    view->stride[i] = stride[i];
+  }
+
+  view->len = len;
   tensor->storage->refCount++;
-  slice->storage = tensor->storage;
-  slice->data = tensor->data + (id * tensor->stride[0]);
+  view->storage = tensor->storage;
+  view->data = tensor->data + (id * tensor->stride[0]);
 
-  return slice;
+  return 0;
+}
+
+tensor_t *getView(tensor_t *tensor, uint32_t id) {
+  tensor_t *view = (tensor_t *)malloc(sizeof(tensor_t));
+
+  initView(view, tensor, id);
+
+  return view;
 }
 
 int fillTensor(tensor_t *tensor, float value) {
@@ -127,6 +160,22 @@ void freeTensor(tensor_t *tensor) {
   free(tensor->stride);
   free(tensor);
   tensor = NULL;
+}
+
+void freeViewArray(tensor_t *viewArray, uint32_t len) {
+  if (!viewArray) {
+    return;
+  }
+  for (uint32_t i = 0; i < len; i++) {
+    (viewArray + i)->storage->refCount--;
+    if ((viewArray + i)->storage->refCount == 0) {
+      free((viewArray + i)->storage->raw);
+      free((viewArray + i)->storage);
+    }
+    free((viewArray + i)->shape);
+    free((viewArray + i)->stride);
+  }
+  free(viewArray);
 }
 
 int multiply2dTensor(tensor_t *prod, tensor_t *a, tensor_t *b) {
@@ -199,8 +248,7 @@ int softmaxTensor(tensor_t *out, tensor_t *in) {
 }
 
 float crossEntropyLoss(tensor_t *predicted, uint8_t real) {
-  double p = (predicted->data[real] > 1e-7) ? predicted->data[real] : 1e-7;
-  return (float)(-1 * log(p));
+  return (float)(-1 * log((double)predicted->data[real]));
 }
 
 tensor_t *transpose2dTensor(tensor_t *tensor) {

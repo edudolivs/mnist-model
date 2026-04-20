@@ -1,5 +1,6 @@
 #include "layer.h"
 #include "tensor.h"
+#include "loader.h"
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -58,6 +59,8 @@ int initLayer(layer_t *layer, uint32_t sizeIn, uint32_t sizeOut, act_t act) {
     return 1;
   }
 
+  fillTensor(layer->dBiases, 0);
+  fillTensor(layer->dWeights, 0);
   fillGaussTensor(layer->weights);
   fillGaussTensor(layer->biases);
 
@@ -84,7 +87,7 @@ layer_t *getLayer(uint32_t sizeIn, uint32_t sizeOut, act_t act) {
   return layer;
 }
 
-network_t *getNetwork(uint32_t sizeIn, uint32_t numLayers, uint32_t *sizeLayers) {
+network_t *getNetwork(uint32_t sizeIn, uint32_t numLayers, uint32_t *sizeLayers, float learningRate, uint32_t batchSize) {
   network_t *network = (network_t *)malloc(sizeof(network_t));
   if (!network) {
     perror("malloc");
@@ -106,8 +109,12 @@ network_t *getNetwork(uint32_t sizeIn, uint32_t numLayers, uint32_t *sizeLayers)
     return NULL;
   }
 
+  uint32_t maxSize = 0;
   for (uint32_t i = 0; i < numLayers; i++) {
     network->sizeLayers[i] = sizeLayers[i];
+    if (sizeLayers[i] > maxSize) {
+      maxSize = sizeLayers[i];
+    }
 
     if (numLayers == 1) {
       initLayer(network->layers, sizeIn, sizeLayers[i], SOFT);
@@ -124,8 +131,14 @@ network_t *getNetwork(uint32_t sizeIn, uint32_t numLayers, uint32_t *sizeLayers)
     }
   }
 
+  network->buffers = (float **)malloc(sizeof(float *) * 2);
+  network->buffers[0] = (float *)malloc(sizeof(float) * maxSize);
+  network->buffers[1] = (float *)malloc(sizeof(float) * maxSize);
+
   network->sizeIn = sizeIn;
   network->numLayers = numLayers;
+  network->learningRate = learningRate;
+  network->batchSize = batchSize;
 
   return network;
 }
@@ -156,11 +169,21 @@ void freeNetwork(network_t *network) {
     return;
   }
   for (uint32_t i = 0; i < network->numLayers; i++) {
-    freeLayerAtt(network->layers + 1);
+    freeLayerAtt(network->layers + i);
   }
   free(network->layers);
   free(network->sizeLayers);
   free(network);
+}
+
+int zeroNetworkDerivative(network_t *network) {
+  for (uint32_t i = 0; i < network->numLayers; i++) {
+    layer_t *layer = network->layers + i;
+    fillTensor(layer->dWeights, 0);
+    fillTensor(layer->dBiases, 0);
+  }
+
+  return 0;
 }
 
 int insertInput(layer_t *layer, tensor_t *input) {
@@ -210,3 +233,110 @@ int computeNetwork(network_t *network, tensor_t *input) {
   return 0;
 }
 
+int accDeriveZ(layer_t *layer, float *dOut) {
+  switch (layer->act) {
+    case SOFT: {
+      break;
+    }
+    case RELU: {
+      for (uint32_t i = 0; i < layer->sizeOut; i++) {
+        if (layer->z->data[i] < 0) {
+          dOut[i] = 0;
+        } else if (layer->z->data[i] == 0) {
+          dOut[i] *= 0.5;
+        }
+      }
+      break;
+    }
+  }
+
+  return 0;
+}
+
+int accDeriveBiases(layer_t *layer, float *dOut) {
+  for (uint32_t i = 0; i < layer->sizeOut; i++) {
+    layer->dBiases->data[i] += dOut[i];
+  }
+
+  return 0;
+}
+
+int accDeriveWeights(layer_t *layer, float *dOut) {
+  for (uint32_t i = 0; i < layer->sizeIn; i++) {
+    for (uint32_t j = 0; j < layer->sizeOut; j++) {
+      *getValue(layer->dWeights, j, i) += dOut[j] * layer->in->data[i];
+    }
+  }
+
+  return 0;
+}
+
+int accDeriveWO(layer_t *layer, float *dIn, float *dOut) {
+  for (uint32_t i = 0; i < layer->sizeIn; i++) {
+    dIn[i] = 0;
+    for (uint32_t j = 0; j < layer->sizeOut; j++) {
+      *getValue(layer->dWeights, j, i) += dOut[j] * layer->in->data[i];
+      dIn[i] += *getValue(layer->weights, j, i) * dOut[j];
+    }
+  }
+
+  return 0;
+}
+
+int accDeriveNetwork(network_t *network, uint8_t label) {
+
+  layer_t *lastLayer = (network->layers + network->numLayers - 1);
+
+  switch(lastLayer->act) {
+    case SOFT: {
+      for (uint32_t i = 0; i < lastLayer->sizeOut; i++) {
+        network->buffers[(network->numLayers - 1) % 2][i] = lastLayer->out->data[i] - (i == label);
+      }
+      break;
+    }
+    case RELU: {
+      break;
+    }
+  }
+
+  for (uint32_t i = network->numLayers; i-- > 0; ) {
+    accDeriveZ(network->layers + i, network->buffers[i % 2]);
+    accDeriveBiases(network->layers + i, network->buffers[i % 2]);
+    if (i == 0) {
+      accDeriveWeights(network->layers + i, network->buffers[i % 2]);
+    } else {
+      accDeriveWO(network->layers + i, network->buffers[(i + 1) % 2], network->buffers[i % 2]);
+    }
+  }
+
+  return 0;
+}
+
+int updateNetwork(network_t *network) {
+  for (uint32_t i = 0; i < network->numLayers; i++) {
+    layer_t *layer = network->layers + i;
+    for (uint32_t j = 0; j < layer->weights->len; j++) {
+      layer->weights->data[j] -= layer->dWeights->data[j];
+    }
+    for (uint32_t j = 0; j < layer->biases->len; j++) {
+      layer->biases->data[j] -= (network->learningRate * layer->dBiases->data[j]) / network->batchSize;
+    }
+  }
+  zeroNetworkDerivative(network);
+
+  return 0;
+}
+
+int trainEpoch(network_t *network, shuffler_t *shuffler) {
+  shuffleData(shuffler);
+  
+  for (uint32_t i = 0; i < shuffler->lImages->labels->len; i++) {
+    computeNetwork(network, shuffler->views + i);
+    accDeriveNetwork(network, shuffler->sLabels[i]);
+    if (i % network->batchSize == network->batchSize - 1) {
+      updateNetwork(network);
+    }
+  }
+
+  return 0;
+}

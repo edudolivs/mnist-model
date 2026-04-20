@@ -32,6 +32,19 @@ float randGauss() {
   return sqrt(-2 * log(u1)) * cos(2 * M_PI * u2);
 }
 
+int shuffleArray(uint32_t *array, uint32_t len) {
+  uint32_t j, temp;
+  for (uint32_t i = len - 1; i > 0; i--) {
+    j = randUint32() % (i + 1);
+
+    temp = array[j];
+    array[j] = array[i];
+    array[i] = temp;
+  }
+
+  return 0;
+}
+
 void printGauss() {
   seed(time(NULL));
 

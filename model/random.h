@@ -11,6 +11,8 @@ float randFloat();
 
 float randGauss();
 
+int shuffleArray(uint32_t *array, uint32_t len);
+
 void printGauss();
 
 #endif

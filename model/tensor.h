@@ -22,6 +22,8 @@ tensor_t *allocTensor(uint8_t dim, uint32_t *shape);
 
 tensor_t *getTensor(uint8_t dim, uint32_t *shape);
 
+int initView(tensor_t *view, tensor_t *tensor, uint32_t id);
+
 tensor_t *getView(tensor_t *tensor, uint32_t id);
 
 static inline float *getValue(tensor_t *tensor, uint32_t line, uint32_t column) {
@@ -35,6 +37,8 @@ int fillGaussTensor(tensor_t *tensor);
 int copyTensor(tensor_t *dest, tensor_t *origin);
 
 void freeTensor(tensor_t *tensor);
+
+void freeViewArray(tensor_t *viewArray, uint32_t len);
 
 int multiply2dTensor(tensor_t *prod, tensor_t *a, tensor_t *b);
 
