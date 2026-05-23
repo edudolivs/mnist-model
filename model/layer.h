@@ -57,18 +57,22 @@ int computeLayer(layer_t *layer);
 
 int computeNetwork(network_t *network, tensor_t *input);
 
-int accDeriveZ(layer_t *layer, float *dOut);
+int DeriveZ(layer_t *layer, float *dOut);
 
 int accDeriveBiases(layer_t *layer, float *dOut);
 
 int accDeriveWeights(layer_t *layer, float *dOut);
 
-int accDeriveWO(layer_t *layer, float *dIn, float *dOut);
+int accDeriveWnO(layer_t *layer, float *dIn, float *dOut);
 
 int accDeriveNetwork(network_t *network, uint8_t label);
 
 int updateNetwork(network_t *network);
 
 int trainEpoch(network_t *network, shuffler_t *shuffler);
+
+void testAccuracy(network_t *network, shuffler_t *shuffler);
+
+int train(network_t *network, shuffler_t *shuffler, uint32_t epochs);
 
 #endif

@@ -7,36 +7,36 @@
 #include <time.h>
 #include <stdlib.h>
 
-int loadMnist() {
-  // char *trainImagesPath = "/Users/edudolivs/Projects/mnist-model/mnist-dataset/train-images.idx3-ubyte";
-  // char *trainLabelsPath = "/Users/edudolivs/Projects/mnist-model/mnist-dataset/train-labels.idx1-ubyte";
-  //
-  // tensor_t *trainImages = loadIdx(trainImagesPath);
-  // tensor_t *trainLabels = loadIdx(trainLabelsPath);
-  //
-  // uint32_t imageId = 0;
-  //
-  // uint32_t *indexes = getIndexesArray(trainImages);
-  // tensor_t *views = getViewArray(trainImages);
-  // float *labels = (float *)malloc(sizeof(float) * trainLabels->len);
-  //
-  // shuffleData(views, labels, trainImages, trainLabels, indexes);
-  //
-  // printf("label: %.0f\n", labels[imageId]);
-  // displayImage(views + imageId);
-  //
-  // tensor_t *view = getView(trainImages, indexes[0]);
-  //
-  // printf("label %u: %.0f\n", indexes[0], trainLabels->data[indexes[0]]);
-  // displayImage(view);
-  //
-  // printf("%u\n", indexes[500]);
-  //
-  // freeTensor(trainImages);
-  // freeTensor(trainLabels);
-
-   return 0;
-}
+// int loadMnist() {
+//   char *trainImagesPath = "/Users/edudolivs/Projects/mnist-model/mnist-dataset/train-images.idx3-ubyte";
+//   char *trainLabelsPath = "/Users/edudolivs/Projects/mnist-model/mnist-dataset/train-labels.idx1-ubyte";
+//
+//   tensor_t *trainImages = loadIdx(trainImagesPath);
+//   tensor_t *trainLabels = loadIdx(trainLabelsPath);
+//
+//   uint32_t imageId = 0;
+//
+//   uint32_t *indexes = getIndexesArray(trainImages);
+//   tensor_t *views = getViewArray(trainImages);
+//   float *labels = (float *)malloc(sizeof(float) * trainLabels->len);
+//
+//   shuffleData(views, labels, trainImages, trainLabels, indexes);
+//
+//   printf("label: %.0f\n", labels[imageId]);
+//   displayImage(views + imageId);
+//
+//   tensor_t *view = getView(trainImages, indexes[0]);
+//
+//   printf("label %u: %.0f\n", indexes[0], trainLabels->data[indexes[0]]);
+//   displayImage(view);
+//
+//   printf("%u\n", indexes[500]);
+//
+//   freeTensor(trainImages);
+//   freeTensor(trainLabels);
+//
+//    return 0;
+// }
 
 int testOperations() {
   uint32_t shape[] = {3, 3};
@@ -99,44 +99,19 @@ int testTrain() {
   lImages_t *lImages = getLabeledImages(trainImagesPath, trainLabelsPath);
   shuffler_t *shuffler = getShuffler(lImages);
 
-  uint32_t sizeLayers[] = {10, 10};
-  network_t *network = getNetwork(lImages->images->stride[0], 2, sizeLayers, 0, 100);
+  uint32_t sizeLayers[] = {512, 256, 10};
+  network_t *network = getNetwork(lImages->images->stride[0], 3, sizeLayers, 1, 64);
 
-  float correct = 0;
-  uint32_t max;
-  for (uint32_t i = 0; i < 60000; i++) {
-    computeNetwork(network, shuffler->views + i);
-    max = 0;
-    for (uint32_t j = 1; j < 10; j++) {
-      if (network->layers[1].out->data[j] > network->layers[1].out->data[max]) {
-        max = j;
-      }
-    }
-    if (max == shuffler->sLabels[i]) {
-      correct++;
-    }
-  }
-  printf("accuracy before: %f\n", correct / 60000.0);
+  train(network, shuffler, 10);
 
-  for (uint32_t i = 0; i < 10; i++) {
-    trainEpoch(network, shuffler);
-    printf("finished epoch %d\n", i + 1);
-    correct = 0;
-    for (uint32_t i = 0; i < 60000; i++) {
-      computeNetwork(network, shuffler->views + i);
-      max = 0;
-      for (uint32_t j = 1; j < 10; j++) {
-        if (network->layers[1].out->data[j] > network->layers[1].out->data[max]) {
-          max = j;
-        }
-      }
-      if (max == shuffler->sLabels[i]) {
-        correct++;
-      }
-    }
-    printf("accuracy: %.3f%%\n", 100 * correct / 60000.0);
+  char *testImagesPath = "/Users/edudolivs/Projects/mnist-model/mnist-dataset/t10k-images.idx3-ubyte";
+  char *testLabelsPath = "/Users/edudolivs/Projects/mnist-model/mnist-dataset/t10k-labels.idx1-ubyte";
 
-  }
+  lImages_t *lImagesTest = getLabeledImages(testImagesPath, testLabelsPath);
+  shuffler_t *shufflerTest = getShuffler(lImagesTest);
+
+  printf("Test Accuracy:\n");
+  testAccuracy(network, shufflerTest);
 
   return 0;
 }

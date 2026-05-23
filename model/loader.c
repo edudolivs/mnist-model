@@ -98,6 +98,7 @@ shuffler_t *getShuffler(lImages_t *lImages) {
     return NULL;
   }
 
+  shuffler->nViews = lImages->labels->len;
   shuffler->indexes = getIndexesArray(lImages->images);
   shuffler->views = getViewArray(lImages->images);
   shuffler->sLabels = (float *)malloc(sizeof(float) * lImages->labels->len);

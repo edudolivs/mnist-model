@@ -231,24 +231,31 @@ int softmaxTensor(tensor_t *out, tensor_t *in) {
     return 1;
   }
 
-  double *buffer = malloc(sizeof(double) * out->len);
   double denominator = 0;
-
-  for (uint32_t i = 0; i < out->len; i++) {
-    out->data[i] = exp((double)in->data[i]);
-    denominator += out->data[i];
+  float max = in->data[0];
+  for (uint8_t i = 1; i < in->len; i++) {
+    if (in->data[i] > max) {
+      max = in->data[i];
+    }
   }
 
+  for (uint32_t i = 0; i < out->len; i++) {
+    out->data[i] = exp((double)(in->data[i] - max));
+    denominator += out->data[i];
+    // printf("out[%u]: %lf\n", i, out->data[i]);
+  }
+
+  // printf("denominator: %lf\n", denominator);
   for (uint32_t i = 0; i < out->len; i++) {
     out->data[i] = (float)(out->data[i] / denominator);
   }
 
-  free(buffer);
   return 0;
 }
 
 float crossEntropyLoss(tensor_t *predicted, uint8_t real) {
-  return (float)(-1 * log((double)predicted->data[real]));
+  double p = (predicted->data[real] > 1e-7) ? (double)predicted->data[real] : 1e-7;
+  return (float)(-1 * log(p));
 }
 
 tensor_t *transpose2dTensor(tensor_t *tensor) {

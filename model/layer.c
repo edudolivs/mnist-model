@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <math.h>
 
 int initLayer(layer_t *layer, uint32_t sizeIn, uint32_t sizeOut, act_t act) {
   uint32_t shapeOut[2] = {sizeOut, 1};
@@ -207,6 +208,7 @@ int insertInput(layer_t *layer, tensor_t *input) {
 
 int computeLayer(layer_t *layer) {
   if (!layer) {
+    fprintf(stderr, "computeLayer: layer == NULL\n");
     return 1;
   }
 
@@ -233,13 +235,17 @@ int computeNetwork(network_t *network, tensor_t *input) {
   return 0;
 }
 
-int accDeriveZ(layer_t *layer, float *dOut) {
+int DeriveZ(layer_t *layer, float *dOut) {
   switch (layer->act) {
     case SOFT: {
       break;
     }
     case RELU: {
       for (uint32_t i = 0; i < layer->sizeOut; i++) {
+        if (isnan(dOut[i])) {
+          fprintf(stderr, "DeriveZ: dOut[%u] is NaN\n", i);
+          return 1;
+        }
         if (layer->z->data[i] < 0) {
           dOut[i] = 0;
         } else if (layer->z->data[i] == 0) {
@@ -271,12 +277,24 @@ int accDeriveWeights(layer_t *layer, float *dOut) {
   return 0;
 }
 
-int accDeriveWO(layer_t *layer, float *dIn, float *dOut) {
+int accDeriveWnO(layer_t *layer, float *dIn, float *dOut) {
   for (uint32_t i = 0; i < layer->sizeIn; i++) {
-    dIn[i] = 0;
     for (uint32_t j = 0; j < layer->sizeOut; j++) {
+      if (isnan(*getValue(layer->dWeights, j, i) + dOut[j] * layer->in->data[i])) {
+        fprintf(stderr, "accDeriveWnO: NaN value detected for dWeight[%u][%u]\n", j, i);
+        fprintf(stderr, "total dWeight[%u][%u]: %f\n", j, i, *getValue(layer->dWeights, j, i));
+        fprintf(stderr, "dOut[%u]: %f, in[%u]: %f\n", j, dOut[j], i, layer->in->data[i]);
+        return 1;
+      }
       *getValue(layer->dWeights, j, i) += dOut[j] * layer->in->data[i];
-      dIn[i] += *getValue(layer->weights, j, i) * dOut[j];
+      if (dIn) {
+        if (isnan(*getValue(layer->weights, j, i) * dOut[j])) {
+          fprintf(stderr, "accDeriveWnO: NaN value detected for dIn[%u]\n", i);
+          fprintf(stderr, "Weights[%u][%u]: %f, dOut[%u]: %f\n", j, i, *getValue(layer->weights, j, i), j, dOut[j]);
+          return 1;
+        }
+        dIn[i] = *getValue(layer->weights, j, i) * dOut[j];
+      }
     }
   }
 
@@ -290,6 +308,11 @@ int accDeriveNetwork(network_t *network, uint8_t label) {
   switch(lastLayer->act) {
     case SOFT: {
       for (uint32_t i = 0; i < lastLayer->sizeOut; i++) {
+        if (isnan(lastLayer->out->data[i] - (i == label))) {
+          fprintf(stderr, "accDeriveNetwork: NaN value detected for last layer dOut[%u]\n", i);
+          fprintf(stderr, "out[%u]: %f, i == label: %d\n", i, lastLayer->out->data[i], i == label);
+          return 1;
+        }
         network->buffers[(network->numLayers - 1) % 2][i] = lastLayer->out->data[i] - (i == label);
       }
       break;
@@ -300,12 +323,24 @@ int accDeriveNetwork(network_t *network, uint8_t label) {
   }
 
   for (uint32_t i = network->numLayers; i-- > 0; ) {
-    accDeriveZ(network->layers + i, network->buffers[i % 2]);
-    accDeriveBiases(network->layers + i, network->buffers[i % 2]);
+    if (DeriveZ(network->layers + i, network->buffers[i % 2])) {
+      fprintf(stderr, "accDeriveNetwork: DeriveZ error in layer %u\n", i);
+      return 1;
+    }
+    if (accDeriveBiases(network->layers + i, network->buffers[i % 2])) {
+      fprintf(stderr, "accDeriveNetwork: accDeriveBiases error in layer %u\n", i);
+      return 1;
+    }
     if (i == 0) {
-      accDeriveWeights(network->layers + i, network->buffers[i % 2]);
+      if (accDeriveWnO(network->layers + i, NULL, network->buffers[i % 2])) {
+        fprintf(stderr, "accDeriveNetwork: accDeriveWnO error in layer %u\n", i);
+        return 1;
+      }
     } else {
-      accDeriveWO(network->layers + i, network->buffers[(i + 1) % 2], network->buffers[i % 2]);
+      if (accDeriveWnO(network->layers + i, network->buffers[(i + 1) % 2], network->buffers[i % 2])) {
+        fprintf(stderr, "accDeriveNetwork: accDeriveWnO error in layer %u\n", i);
+        return 1;
+      }
     }
   }
 
@@ -316,7 +351,7 @@ int updateNetwork(network_t *network) {
   for (uint32_t i = 0; i < network->numLayers; i++) {
     layer_t *layer = network->layers + i;
     for (uint32_t j = 0; j < layer->weights->len; j++) {
-      layer->weights->data[j] -= layer->dWeights->data[j];
+      layer->weights->data[j] -= (network->learningRate * layer->dWeights->data[j]) / network->batchSize;
     }
     for (uint32_t j = 0; j < layer->biases->len; j++) {
       layer->biases->data[j] -= (network->learningRate * layer->dBiases->data[j]) / network->batchSize;
@@ -330,13 +365,87 @@ int updateNetwork(network_t *network) {
 int trainEpoch(network_t *network, shuffler_t *shuffler) {
   shuffleData(shuffler);
   
+  uint32_t batchNum = 0;
+  printf("\n");
   for (uint32_t i = 0; i < shuffler->lImages->labels->len; i++) {
     computeNetwork(network, shuffler->views + i);
-    accDeriveNetwork(network, shuffler->sLabels[i]);
+    if (accDeriveNetwork(network, shuffler->sLabels[i])) {
+      fprintf(stderr, "trainEpoch: accDeriveNetwork error in image %u\n", i);
+      printf("label: %.0f\n", shuffler->sLabels[i]);
+      displayImage(shuffler->views + i);
+      for (uint32_t j = 0; j < network->numLayers; j++) {
+        fprintf(stderr, "layer %u weights:\n", j);
+        display2dTensor(network->layers[j].weights);
+        fprintf(stderr, "layer %u biases:\n", j);
+        display2dTensor(network->layers[j].biases);
+        fprintf(stderr, "layer %u z:\n", j);
+        display2dTensor(network->layers[j].z);
+        fprintf(stderr, "layer %u output:\n", j);
+        display2dTensor(network->layers[j].out);
+      }
+      fprintf(stderr, "learning rate: %f\n", network->learningRate);
+      return 1;
+    }
+    // if (i % 3000 == 0) {
+    //   for (uint32_t j = 0; j < network->numLayers; j++) {
+    //     printf("layer %u weights:\n", j);
+    //     display2dTensor(network->layers[j].weights);
+    //     printf("layer %u biases:\n", j);
+    //     display2dTensor(network->layers[j].biases);
+    //     printf("layer %u output:\n", j);
+    //     display2dTensor(network->layers[j].out);
+    //   }
+    //   printf("label %u: %.0f\n", i, shuffler->sLabels[i]);
+    //   displayImage(shuffler->views + i);
+    //   printf("\n\n");
+    //   for (uint32_t j = 0; j < network->numLayers; j++) {
+    //     printf("layer %u dWeights:\n", j);
+    //     display2dTensor(network->layers[j].dWeights);
+    //     printf("layer %u dBiases:\n", j);
+    //     display2dTensor(network->layers[j].dBiases);
+    //     printf("layer %u output:\n", j);
+    //     display2dTensor(network->layers[j].out);
+    //   }
+    // }
     if (i % network->batchSize == network->batchSize - 1) {
+      batchNum++;
+      printf("\rBatch %u out of %u completed", batchNum, shuffler->lImages->labels->len / network->batchSize);
       updateNetwork(network);
     }
   }
 
+  updateNetwork(network);
+  printf("\n");
+
+  return 0;
+}
+
+void testAccuracy(network_t *network, shuffler_t *shuffler) {
+  double correct = 0;
+  uint32_t max;
+  for (uint32_t i = 0; i < shuffler->nViews; i++) {
+    computeNetwork(network, shuffler->views + i);
+    max = 0;
+    for (uint32_t j = 1; j < 10; j++) {
+      if (network->layers[1].out->data[j] > network->layers[1].out->data[max]) {
+        max = j;
+      }
+    }
+    if ((float)max == shuffler->sLabels[i]) {
+      correct++;
+    }
+  }
+  printf("accuracy: %.3lf%%\n", 100.0 * correct / shuffler->nViews);
+}
+
+int train(network_t *network, shuffler_t *shuffler, uint32_t epochs) {
+  for (uint32_t i = 0; i < epochs; i++) {
+    if (trainEpoch(network, shuffler)) {
+      fprintf(stderr, "testTrain: trainEpoch error\n");
+      return 1;
+    }
+    printf("finished epoch %d\n", i + 1);
+    testAccuracy(network, shuffler);
+  }
   return 0;
 }

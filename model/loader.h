@@ -11,6 +11,7 @@ typedef struct {
 } lImages_t;
 
 typedef struct {
+  uint32_t nViews;
   lImages_t *lImages;
   tensor_t *views;
   float *sLabels;
