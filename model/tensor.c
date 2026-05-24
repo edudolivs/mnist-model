@@ -233,7 +233,7 @@ int softmaxTensor(tensor_t *out, tensor_t *in) {
 
   double denominator = 0;
   float max = in->data[0];
-  for (uint8_t i = 1; i < in->len; i++) {
+  for (uint32_t i = 1; i < in->len; i++) {
     if (in->data[i] > max) {
       max = in->data[i];
     }

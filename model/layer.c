@@ -62,8 +62,13 @@ int initLayer(layer_t *layer, uint32_t sizeIn, uint32_t sizeOut, act_t act) {
 
   fillTensor(layer->dBiases, 0);
   fillTensor(layer->dWeights, 0);
+  fillTensor(layer->biases, 0);
   fillGaussTensor(layer->weights);
-  fillGaussTensor(layer->biases);
+
+  float scale = (act == RELU) ? (float)sqrt(2.0 / (double)sizeIn) : (float)sqrt(1.0 / (double)sizeIn);
+  for (uint32_t i = 0; i < layer->weights->len; i++) {
+    layer->weights->data[i] *= scale;
+  }
 
   layer->in = NULL;
   layer->sizeIn = sizeIn;
@@ -288,12 +293,15 @@ int accDeriveWnO(layer_t *layer, float *dIn, float *dOut) {
       }
       *getValue(layer->dWeights, j, i) += dOut[j] * layer->in->data[i];
       if (dIn) {
+        if (j == 0) {
+          dIn[i] = 0;
+        }
         if (isnan(*getValue(layer->weights, j, i) * dOut[j])) {
           fprintf(stderr, "accDeriveWnO: NaN value detected for dIn[%u]\n", i);
           fprintf(stderr, "Weights[%u][%u]: %f, dOut[%u]: %f\n", j, i, *getValue(layer->weights, j, i), j, dOut[j]);
           return 1;
         }
-        dIn[i] = *getValue(layer->weights, j, i) * dOut[j];
+        dIn[i] += *getValue(layer->weights, j, i) * dOut[j];
       }
     }
   }
@@ -427,7 +435,7 @@ void testAccuracy(network_t *network, shuffler_t *shuffler) {
     computeNetwork(network, shuffler->views + i);
     max = 0;
     for (uint32_t j = 1; j < 10; j++) {
-      if (network->layers[1].out->data[j] > network->layers[1].out->data[max]) {
+      if (network->layers[network->numLayers - 1].out->data[j] > network->layers[network->numLayers - 1].out->data[max]) {
         max = j;
       }
     }
@@ -435,7 +443,7 @@ void testAccuracy(network_t *network, shuffler_t *shuffler) {
       correct++;
     }
   }
-  printf("accuracy: %.3lf%%\n", 100.0 * correct / shuffler->nViews);
+  printf("%.3lf%%\n", 100.0 * correct / shuffler->nViews);
 }
 
 int train(network_t *network, shuffler_t *shuffler, uint32_t epochs) {
@@ -445,6 +453,7 @@ int train(network_t *network, shuffler_t *shuffler, uint32_t epochs) {
       return 1;
     }
     printf("finished epoch %d\n", i + 1);
+    printf("train accuracy: ");
     testAccuracy(network, shuffler);
   }
   return 0;

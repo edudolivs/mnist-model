@@ -99,18 +99,20 @@ int testTrain() {
   lImages_t *lImages = getLabeledImages(trainImagesPath, trainLabelsPath);
   shuffler_t *shuffler = getShuffler(lImages);
 
-  uint32_t sizeLayers[] = {512, 256, 10};
-  network_t *network = getNetwork(lImages->images->stride[0], 3, sizeLayers, 1, 64);
+  uint32_t sizeLayers[] = {128, 10};
+  network_t *network = getNetwork(lImages->images->stride[0], 2, sizeLayers, 1e-1, 64);
 
-  train(network, shuffler, 10);
+  train(network, shuffler, 4);
 
   char *testImagesPath = "/Users/edudolivs/Projects/mnist-model/mnist-dataset/t10k-images.idx3-ubyte";
   char *testLabelsPath = "/Users/edudolivs/Projects/mnist-model/mnist-dataset/t10k-labels.idx1-ubyte";
 
   lImages_t *lImagesTest = getLabeledImages(testImagesPath, testLabelsPath);
   shuffler_t *shufflerTest = getShuffler(lImagesTest);
+  shuffleData(shufflerTest);
 
-  printf("Test Accuracy:\n");
+  printf("\n");
+  printf("Test Accuracy: ");
   testAccuracy(network, shufflerTest);
 
   return 0;
