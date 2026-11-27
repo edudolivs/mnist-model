@@ -10,53 +10,47 @@ int initLayer(layer_t *layer, uint32_t sizeIn, uint32_t sizeOut, act_t act) {
   uint32_t shapeOut[2] = {sizeOut, 1};
   layer->z = getTensor(2, shapeOut);
   if (!layer->z) {
-    perror("malloc");
     return 1;
   }
 
   layer->out = getTensor(2, shapeOut);
   if (!layer->out) {
-    perror("malloc");
-    free(layer->z);
+    freeTensor(layer->z);
     return 1;
   }
 
   layer->biases = getTensor(2, shapeOut);
   if (!layer->biases) {
-    perror("malloc");
-    free(layer->out);
-    free(layer->z);
+    freeTensor(layer->out);
+    freeTensor(layer->z);
     return 1;
   }
 
   layer->dBiases = getTensor(2, shapeOut);
   if (!layer->dBiases) {
-    perror("malloc");
-    free(layer->biases);
-    free(layer->out);
-    free(layer->z);
+    freeTensor(layer->biases);
+    freeTensor(layer->out);
+    freeTensor(layer->z);
     return 1;
   }
 
   uint32_t shapeWeights[2] = {sizeOut, sizeIn};
   layer->weights = getTensor(2, shapeWeights);
   if (!layer->weights) {
-    perror("malloc");
-    free(layer->dBiases);
-    free(layer->biases);
-    free(layer->out);
-    free(layer->z);
+    freeTensor(layer->dBiases);
+    freeTensor(layer->biases);
+    freeTensor(layer->out);
+    freeTensor(layer->z);
     return 1;
   }
 
   layer->dWeights = getTensor(2, shapeWeights);
   if (!layer->dWeights) {
-    perror("malloc");
-    free(layer->weights);
-    free(layer->dBiases);
-    free(layer->biases);
-    free(layer->out);
-    free(layer->z);
+    freeTensor(layer->weights);
+    freeTensor(layer->dBiases);
+    freeTensor(layer->biases);
+    freeTensor(layer->out);
+    freeTensor(layer->z);
     return 1;
   }
 
@@ -115,6 +109,9 @@ network_t *getNetwork(uint32_t sizeIn, uint32_t numLayers, uint32_t *sizeLayers,
     return NULL;
   }
 
+  network->numLayers = 0;
+  network->buffers = NULL;
+
   uint32_t maxSize = 0;
   for (uint32_t i = 0; i < numLayers; i++) {
     network->sizeLayers[i] = sizeLayers[i];
@@ -122,24 +119,34 @@ network_t *getNetwork(uint32_t sizeIn, uint32_t numLayers, uint32_t *sizeLayers,
       maxSize = sizeLayers[i];
     }
 
-    if (numLayers == 1) {
-      initLayer(network->layers, sizeIn, sizeLayers[i], SOFT);
-    } else if (i == 0) {
-      initLayer(network->layers, sizeIn, sizeLayers[i], RELU);
-    } else if (i == numLayers - 1) {
-      initLayer(network->layers + i, sizeLayers[i - 1], sizeLayers[i], SOFT);
-    } else {
-      initLayer(network->layers + i, sizeLayers[i - 1], sizeLayers[i], RELU);
+    uint32_t layerSizeIn = (i == 0) ? sizeIn : sizeLayers[i - 1];
+    act_t act = (i == numLayers - 1) ? SOFT : RELU;
+    if (initLayer(network->layers + i, layerSizeIn, sizeLayers[i], act)) {
+      network->numLayers = i;
+      freeNetwork(network);
+      return NULL;
     }
+    network->numLayers = i + 1;
 
-    if (i > 0) {
-      insertInput(network->layers + i, network->layers[i - 1].out);
+    if (i > 0 && insertInput(network->layers + i, network->layers[i - 1].out)) {
+      freeNetwork(network);
+      return NULL;
     }
   }
 
-  network->buffers = (float **)malloc(sizeof(float *) * 2);
+  network->buffers = (float **)calloc(2, sizeof(float *));
+  if (!network->buffers) {
+    perror("malloc");
+    freeNetwork(network);
+    return NULL;
+  }
   network->buffers[0] = (float *)malloc(sizeof(float) * maxSize);
   network->buffers[1] = (float *)malloc(sizeof(float) * maxSize);
+  if (!network->buffers[0] || !network->buffers[1]) {
+    perror("malloc");
+    freeNetwork(network);
+    return NULL;
+  }
 
   network->sizeIn = sizeIn;
   network->numLayers = numLayers;
@@ -177,6 +184,11 @@ void freeNetwork(network_t *network) {
   for (uint32_t i = 0; i < network->numLayers; i++) {
     freeLayerAtt(network->layers + i);
   }
+  if (network->buffers) {
+    free(network->buffers[0]);
+    free(network->buffers[1]);
+    free(network->buffers);
+  }
   free(network->layers);
   free(network->sizeLayers);
   free(network);
@@ -198,10 +210,18 @@ int insertInput(layer_t *layer, tensor_t *input) {
     return 1;
   }
 
-  uint32_t shapeIn[] = {input->len, 1};
-  layer->in = allocTensor(input->dim, shapeIn);
   if (!layer->in) {
-    return 1;
+    uint32_t shapeIn[] = {input->len, 1};
+    layer->in = allocTensor(2, shapeIn);
+    if (!layer->in) {
+      return 1;
+    }
+  } else {
+    layer->in->storage->refCount--;
+    if (layer->in->storage->refCount == 0) {
+      free(layer->in->storage->raw);
+      free(layer->in->storage);
+    }
   }
 
   input->storage->refCount++;

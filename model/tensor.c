@@ -47,6 +47,9 @@ tensor_t *allocTensor(uint8_t dim, uint32_t *shape) {
 
 tensor_t *getTensor(uint8_t dim, uint32_t *shape) {
   tensor_t *tensor = allocTensor(dim, shape);
+  if (!tensor) {
+    return NULL;
+  }
 
   tensor->storage = (storage_t *)malloc(sizeof(storage_t));
   if (!tensor->storage) {
@@ -111,8 +114,15 @@ int initView(tensor_t *view, tensor_t *tensor, uint32_t id) {
 
 tensor_t *getView(tensor_t *tensor, uint32_t id) {
   tensor_t *view = (tensor_t *)malloc(sizeof(tensor_t));
+  if (!view) {
+    perror("malloc");
+    return NULL;
+  }
 
-  initView(view, tensor, id);
+  if (initView(view, tensor, id)) {
+    free(view);
+    return NULL;
+  }
 
   return view;
 }

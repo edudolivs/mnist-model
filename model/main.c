@@ -115,6 +115,12 @@ int testTrain() {
   printf("Test Accuracy: ");
   testAccuracy(network, shufflerTest);
 
+  freeShuffler(shufflerTest);
+  freeLabeledImages(lImagesTest);
+  freeNetwork(network);
+  freeShuffler(shuffler);
+  freeLabeledImages(lImages);
+
   return 0;
 }
 
