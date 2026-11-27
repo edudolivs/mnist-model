@@ -39,10 +39,15 @@ int readSizeDimention(uint32_t *shape, FILE *file, uint8_t dim) {
 
 int readData(tensor_t *tensor, FILE *file) {
   uint8_t *buffer = (uint8_t *)malloc(sizeof(uint8_t) * tensor->len);
+  if (!buffer) {
+    perror("malloc");
+    return 1;
+  }
 
   size_t elemRead = fread(buffer, 1, tensor->len, file);
   if (elemRead != tensor->len) {
     fprintf(stderr, "fread: error\n");
+    free(buffer);
     return 1;
   }
 
@@ -63,18 +68,36 @@ int readData(tensor_t *tensor, FILE *file) {
 
 tensor_t *loadIdx(char *filePath) {
   FILE *file = fopen(filePath, "rb");
-  uint8_t dim;
+  if (!file) {
+    perror("fopen");
+    return NULL;
+  }
 
-  readNumDimention(&dim, file);
+  uint8_t dim;
+  if (readNumDimention(&dim, file) || dim == 0) {
+    fclose(file);
+    return NULL;
+  }
 
   uint32_t shape[dim];
-
-  readSizeDimention(shape, file, dim);
+  if (readSizeDimention(shape, file, dim)) {
+    fclose(file);
+    return NULL;
+  }
 
   tensor_t *tensor = getTensor(dim, shape);
+  if (!tensor) {
+    fclose(file);
+    return NULL;
+  }
 
-  readData(tensor, file);
+  if (readData(tensor, file)) {
+    freeTensor(tensor);
+    fclose(file);
+    return NULL;
+  }
 
+  fclose(file);
   return tensor;
 }
 
@@ -87,8 +110,21 @@ lImages_t *getLabeledImages(char *imagesPath, char *labelsPath) {
 
   lImages->images = loadIdx(imagesPath);
   lImages->labels = loadIdx(labelsPath);
+  if (!lImages->images || !lImages->labels) {
+    freeLabeledImages(lImages);
+    return NULL;
+  }
 
   return lImages;
+}
+
+void freeLabeledImages(lImages_t *lImages) {
+  if (!lImages) {
+    return;
+  }
+  freeTensor(lImages->images);
+  freeTensor(lImages->labels);
+  free(lImages);
 }
 
 shuffler_t *getShuffler(lImages_t *lImages) {
@@ -103,8 +139,23 @@ shuffler_t *getShuffler(lImages_t *lImages) {
   shuffler->views = getViewArray(lImages->images);
   shuffler->sLabels = (float *)malloc(sizeof(float) * lImages->labels->len);
   shuffler->lImages = lImages;
+  if (!shuffler->indexes || !shuffler->views || !shuffler->sLabels) {
+    perror("malloc");
+    freeShuffler(shuffler);
+    return NULL;
+  }
 
   return shuffler;
+}
+
+void freeShuffler(shuffler_t *shuffler) {
+  if (!shuffler) {
+    return;
+  }
+  freeViewArray(shuffler->views, shuffler->lImages->images->shape[0]);
+  free(shuffler->indexes);
+  free(shuffler->sLabels);
+  free(shuffler);
 }
 
 tensor_t *getViewArray(tensor_t *tensor) {
@@ -115,7 +166,10 @@ tensor_t *getViewArray(tensor_t *tensor) {
   }
 
   for (uint32_t i = 0; i < tensor->shape[0]; i++) {
-    initView(array + i, tensor, i);
+    if (initView(array + i, tensor, i)) {
+      freeViewArray(array, i);
+      return NULL;
+    }
   }
 
   return array;
@@ -123,6 +177,9 @@ tensor_t *getViewArray(tensor_t *tensor) {
 
 uint32_t *getIndexesArray(tensor_t *tensor) {
   uint32_t *indexes = (uint32_t *)malloc(sizeof(uint32_t) * tensor->shape[0]);
+  if (!indexes) {
+    return NULL;
+  }
   for (uint32_t i = 0; i < tensor->shape[0]; i++) {
     indexes[i] = i;
   }

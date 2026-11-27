@@ -30,7 +30,11 @@ tensor_t *loadIdx(char *filePath);
 
 lImages_t *getLabeledImages(char *imagesPath, char *labelsPath);
 
+void freeLabeledImages(lImages_t *lImages);
+
 shuffler_t *getShuffler(lImages_t *lImages);
+
+void freeShuffler(shuffler_t *shuffler);
 
 tensor_t *getViewArray(tensor_t *tensor);
 
